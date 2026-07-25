@@ -1,0 +1,32 @@
+# Node.js
+node_modules/
+node_modules_old*/
+node_modules_old/
+.next/
+out/
+build/
+dist/
+
+# Python / Virtualenv
+venv/
+.venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases
+*.db
+*.sqlite3
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

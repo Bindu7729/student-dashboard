@@ -1,0 +1,254 @@
+from datetime import timedelta
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import User, Role
+from app.schemas import Token, UserResponse, UserCreate
+from app.security import verify_password, create_access_token, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from jose import JWTError, jwt
+from app.security import SECRET_KEY, ALGORITHM
+
+router = APIRouter()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+async def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+@router.post("/login", response_model=Token)
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    
+    # Registration / Verification Logic for Authorized Accounts
+    if not user:
+        username_lower = form_data.username.lower()
+        if "dean" in username_lower:
+            role = Role.DEAN
+        elif "faculty" in username_lower:
+            role = Role.FACULTY
+        elif "student" in username_lower:
+            role = Role.STUDENT
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access Denied: Unrecognized account. Only authorized faculty@gmail.com, student@gmail.com, or dean@gmail.com accounts are permitted.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        try:
+            print(f"Auto-provisioning authorized account for {form_data.username} as {role}")
+            
+            import random
+            import string
+            
+            def generate_id(prefix):
+                return f"{prefix}{''.join(random.choices(string.digits, k=4))}"
+
+            student_id = generate_id("ST") if role == Role.STUDENT else None
+            name = form_data.username.split("@")[0].replace(".", " ").replace("_", " ").title()
+            
+            # If Student, sow default data so dashboard doesn't crash
+            if role == Role.STUDENT:
+                from app.models import Student, Department, Section, StudentMetric, RiskScore, RiskLevel, RiskTrend, ModelVersion
+                
+                # 1. Create Student Profile (MUST BE BEFORE USER due to FK)
+                student_profile = Student(
+                    id=student_id,
+                    name=name,
+                    avatar=name[:2].upper(),
+                    course="B.Tech Computer Science",
+                    department=Department.CSE,
+                    section=Section.A,
+                    advisor_id="FAC001" 
+                )
+                db.add(student_profile)
+                db.flush() # Ensure Student exists for User FK
+                
+                # Ensure Model Version exists for Risk Score FK
+                model_v = db.query(ModelVersion).filter(ModelVersion.is_active == True).first()
+                if not model_v:
+                    model_v = ModelVersion(
+                        version="v1.0-auto",
+                        model_path="models/auto-generated",
+                        is_active=True,
+                        accuracy=0.85,
+                        precision=0.85,
+                        recall=0.85,
+                        f1_score=0.85,
+                        training_samples=100,
+                        feature_importance={}
+                    )
+                    db.add(model_v)
+                    db.flush()
+
+                # 2. Create Default Metrics
+                metrics = StudentMetric(
+                    student_id=student_id,
+                    attendance_rate=85.0, # Default to healthy for new users
+                    engagement_score=75.0,
+                    academic_performance_index=7.5,
+                    login_gap_days=0,
+                    failure_ratio=0.0,
+                    financial_risk_flag=False,
+                    commute_risk_score=1,
+                    semester_performance_trend=0.0
+                )
+                db.add(metrics)
+                
+                # 3. Create Default Risk Score (Safe by default)
+                risk = RiskScore(
+                    student_id=student_id,
+                    risk_score=15.0,
+                    risk_level=RiskLevel.SAFE,
+                    risk_trend=RiskTrend.STABLE,
+                    risk_value="15% (New)",
+                    model_version_id=model_v.id,
+                    shap_explanation={"top_factors": []}
+                )
+                db.add(risk)
+
+            # Create new user
+            hashed_password = get_password_hash(form_data.password)
+            user = User(
+                email=form_data.username,
+                password_hash=hashed_password,
+                name=name,
+                role=role,
+                student_id=student_id
+            )
+            db.add(user)
+            db.flush() # Get user.id without committing yet
+            
+            db.commit()
+            db.refresh(user)
+            print(f"Auto-signup success: {user.email}")
+                
+        except Exception as e:
+            print(f"Auto-signup failed for {form_data.username}: {e}")
+            import traceback
+            traceback.print_exc()
+            db.rollback()
+            # If auto-signup fails, user remains None and handled by verify_password below
+
+    if not user or not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email, "role": user.role},
+        expires_delta=access_token_expires
+    )
+    
+    # Ensure user.id is populated (important for auto-registered users)
+    # If user.id is None, it means the object is detached from the session
+    # Re-query from database to get the persistent object
+    if user.id is None:
+        user = db.query(User).filter(User.email == user.email).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="User creation failed"
+            )
+    
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "role": user.role,
+        "user_id": user.id if user.id is not None else 0,
+        "student_id": user.student_id,
+        "name": user.name
+    }
+
+@router.post("/forgot-password")
+async def forgot_password(email: str, db: Session = Depends(get_db)):
+    """Generate a password reset token for the user."""
+    user = db.query(User).filter(User.email == email).first()
+
+    if user:
+        reset_token = create_access_token(
+            data={"sub": user.email, "purpose": "password_reset"},
+            expires_delta=timedelta(minutes=30),
+        )
+        # In production, this token would be emailed. For hackathon demo we
+        # return it so the frontend can use it directly.
+        return {
+            "message": "If an account exists for this email, a reset link has been sent.",
+            "reset_token": reset_token,
+        }
+
+    return {"message": "If an account exists for this email, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(token: str, new_password: str, db: Session = Depends(get_db)):
+    """Reset a user's password using a valid reset token."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            raise HTTPException(status_code=400, detail="Invalid reset token")
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=400, detail="Invalid reset token")
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = get_password_hash(new_password)
+    db.commit()
+    return {"message": "Password reset successfully"}
+
+@router.get("/me", response_model=UserResponse)
+async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
+    return current_user
+
+@router.post("/register", response_model=UserResponse)
+async def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    new_user = User(
+        email=user.email,
+        password_hash=hashed_password,
+        name=user.name,
+        role=user.role,
+        student_id=user.student_id
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
