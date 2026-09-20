@@ -66,7 +66,7 @@ export default function LoginPage() {
   const handleRoleSelect = (role: RoleType) => {
     setSelectedRole(role);
     setError("");
-    setFormData({ email: roleConfig[role].email, password: "passwords" });
+    setFormData({ email: roleConfig[role].email, password: "password" });
   };
 
   const handleBack = () => {

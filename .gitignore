@@ -16,14 +16,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Databases
+# Databases — exclude local test DBs but keep the seeded production DB
 *.db
 *.sqlite3
+# Allow the seeded app database to be committed for deployment
+!backend/student_risk.db
 
 # Environment secrets
 .env
 .env.local
-.env.*.local
+# Allow production env (no secrets — only public API URL)
+!frontend/.env.production
 
 # IDE / OS files
 .vscode/

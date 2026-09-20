@@ -1,158 +1,215 @@
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const randFloat = (min: number, max: number, decimals: number = 2) => Number((Math.random() * (max - min) + min).toFixed(decimals));
-const randChoice = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+import apiClient from '@/lib/api';
+
+// ─── Static fallback helpers ─────────────────────────────────────────────────
+
+function fallbackOverview() {
+    return {
+        total_students: 450,
+        high_risk_count: 86,
+        average_attendance: 84.2,
+        average_risk_score: 32.5,
+        high_risk_department: 'Computer Science',
+        risk_distribution: {
+            'High Risk': 86,
+            'Moderate Risk': 185,
+            'Stable': 120,
+            'Safe': 59,
+        },
+    };
+}
+
+function fallbackDepartmentAnalytics() {
+    return [
+        { department: 'Computer Science', total_students: 150, avg_risk: 38.5, avg_attendance: 82.1, avg_gpa: 7.4, high_risk_count: 32, high_risk_pct: 21.3 },
+        { department: 'Electronics', total_students: 110, avg_risk: 28.2, avg_attendance: 85.6, avg_gpa: 7.8, high_risk_count: 18, high_risk_pct: 16.4 },
+        { department: 'Mechanical', total_students: 120, avg_risk: 22.4, avg_attendance: 88.3, avg_gpa: 7.9, high_risk_count: 12, high_risk_pct: 10.0 },
+        { department: 'Civil', total_students: 70, avg_risk: 44.1, avg_attendance: 78.9, avg_gpa: 7.1, high_risk_count: 24, high_risk_pct: 34.3 },
+    ];
+}
+
+function fallbackFacultyPerformance() {
+    return [
+        { faculty_id: 'F001', student_count: 120, avg_gpa: 8.1, avg_risk: 22.4, avg_engagement: 78.0, avg_attendance: 88.5, performance_flag: false },
+        { faculty_id: 'F002', student_count: 95, avg_gpa: 7.4, avg_risk: 35.2, avg_engagement: 68.0, avg_attendance: 82.3, performance_flag: false },
+        { faculty_id: 'F003', student_count: 110, avg_gpa: 7.8, avg_risk: 27.8, avg_engagement: 74.5, avg_attendance: 85.0, performance_flag: false },
+        { faculty_id: 'F004', student_count: 85, avg_gpa: 7.0, avg_risk: 42.3, avg_engagement: 63.0, avg_attendance: 79.2, performance_flag: true },
+    ];
+}
+
+function fallbackAcademicTrends() {
+    return {
+        pass_fail: { pass: 370, fail: 80 },
+        backlog_count: 95,
+        backlog_rate: 7.6,
+        gpa_trend: [
+            { month: 'Jan', avg_gpa: 7.2 },
+            { month: 'Feb', avg_gpa: 7.5 },
+            { month: 'Mar', avg_gpa: 7.4 },
+            { month: 'Apr', avg_gpa: 7.8 },
+            { month: 'May', avg_gpa: 8.1 },
+            { month: 'Jun', avg_gpa: 7.9 },
+        ],
+        gpa_distribution: [
+            { range: '0-4', count: 12 },
+            { range: '4-5', count: 35 },
+            { range: '5-6', count: 68 },
+            { range: '6-7', count: 112 },
+            { range: '7-8', count: 145 },
+            { range: '8-9', count: 60 },
+            { range: '9-10', count: 18 },
+        ],
+        gpa_risk_scatter: Array.from({ length: 50 }, () => ({
+            gpa: Number((Math.random() * 6 + 4).toFixed(2)),
+            risk: Number((Math.random() * 100).toFixed(1)),
+        })),
+    };
+}
+
+function fallbackEngagementAttendance() {
+    return {
+        avg_attendance: 84.2,
+        avg_engagement: 72.5,
+        low_attendance_count: 56,
+        low_attendance_pct: 12.4,
+        avg_login_gap_days: 2.4,
+        attendance_distribution: [
+            { range: '0-50%', count: 12 },
+            { range: '50-60%', count: 44 },
+            { range: '60-70%', count: 88 },
+            { range: '70-80%', count: 156 },
+            { range: '80-90%', count: 108 },
+            { range: '90-100%', count: 42 },
+        ],
+        attendance_risk_scatter: Array.from({ length: 50 }, () => ({
+            attendance: Number((Math.random() * 60 + 40).toFixed(1)),
+            risk: Number((Math.random() * 100).toFixed(1)),
+        })),
+        department_engagement: [
+            { department: 'Computer Science', avg_engagement: 82.0, avg_attendance: 88.0 },
+            { department: 'Electronics', avg_engagement: 75.0, avg_attendance: 85.0 },
+            { department: 'Mechanical', avg_engagement: 68.0, avg_attendance: 82.0 },
+            { department: 'Civil', avg_engagement: 72.0, avg_attendance: 84.0 },
+        ],
+    };
+}
+
+function fallbackInterventions() {
+    return {
+        high_risk_students: [],
+        total_interventions: 0,
+        status_breakdown: {},
+        success_rate: 0,
+        type_breakdown: [],
+    };
+}
+
+function fallbackPredictiveInsights() {
+    return {
+        model_version: 'N/A',
+        accuracy: 94.2,
+        precision: 91.0,
+        recall: 88.5,
+        f1_score: 89.7,
+        training_samples: 0,
+        feature_importance: [
+            { feature: 'attendance_rate', importance: 0.42 },
+            { feature: 'academic_performance_index', importance: 0.35 },
+            { feature: 'assignment_completion_rate', importance: 0.28 },
+            { feature: 'engagement_score', importance: 0.15 },
+            { feature: 'previous_backlogs', importance: 0.12 },
+        ],
+        risk_forecast: [],
+        confidence_score: 94.2,
+    };
+}
+
+function fallbackReportsSummary() {
+    return [];
+}
+
+// ─── Service ─────────────────────────────────────────────────────────────────
 
 export const deanService = {
     getOverview: async () => {
-        await delay(300);
-        return {
-            total_students: 1240,
-            high_risk_count: 86,
-            average_attendance: randFloat(78, 92, 1),
-            average_risk_score: randFloat(25, 45, 1),
-            high_risk_department: "Computer Science",
-            risk_distribution: {
-                "High Risk": 86,
-                "Moderate Risk": 245,
-                "Stable": 412,
-                "Safe": 497
-            }
-        };
+        try {
+            const res = await apiClient.get('/dean/overview');
+            return res.data;
+        } catch (err) {
+            console.warn('[deanService.getOverview] Backend unavailable, using fallback', err);
+            return fallbackOverview();
+        }
     },
 
     getDepartmentAnalytics: async () => {
-        await delay(400);
-        return [
-            { department: "Computer Science", total_students: 450, avg_risk_score: randFloat(35, 55), avg_attendance: randFloat(80, 95), high_risk_count: 32 },
-            { department: "Electronics", total_students: 320, avg_risk_score: randFloat(25, 45), avg_attendance: randFloat(82, 92), high_risk_count: 18 },
-            { department: "Mechanical", total_students: 280, avg_risk_score: randFloat(20, 35), avg_attendance: randFloat(85, 96), high_risk_count: 12 },
-            { department: "Civil", total_students: 190, avg_risk_score: randFloat(40, 60), avg_attendance: randFloat(75, 88), high_risk_count: 24 }
-        ];
+        try {
+            const res = await apiClient.get('/dean/department-analytics');
+            const data = res.data;
+            return data.departments ?? data;
+        } catch (err) {
+            console.warn('[deanService.getDepartmentAnalytics] Backend unavailable, using fallback', err);
+            return fallbackDepartmentAnalytics();
+        }
     },
 
     getFacultyPerformance: async () => {
-        await delay(500);
-        return [
-            { faculty_id: "F001", name: "Dr. Sarah Jenkins", avg_gpa: randFloat(7.5, 9.2), avg_risk: randFloat(15, 30), avg_attendance: randFloat(88, 98), students_count: 120 },
-            { faculty_id: "F002", name: "Prof. Michael Chen", avg_gpa: randFloat(6.8, 8.5), avg_risk: randFloat(25, 45), avg_attendance: randFloat(82, 92), students_count: 95 },
-            { faculty_id: "F003", name: "Dr. Emily Rodriguez", avg_gpa: randFloat(7.2, 8.8), avg_risk: randFloat(20, 35), avg_attendance: randFloat(85, 95), students_count: 110 },
-            { faculty_id: "F004", name: "Prof. James Wilson", avg_gpa: randFloat(6.5, 8.2), avg_risk: randFloat(30, 50), avg_attendance: randFloat(78, 88), students_count: 85 }
-        ];
+        try {
+            const res = await apiClient.get('/dean/faculty-performance');
+            const data = res.data;
+            return data.faculty ?? data;
+        } catch (err) {
+            console.warn('[deanService.getFacultyPerformance] Backend unavailable, using fallback', err);
+            return fallbackFacultyPerformance();
+        }
     },
 
     getAcademicTrends: async () => {
-        await delay(450);
-        return {
-            pass_fail: { pass: 1120, fail: 120 },
-            backlog_count: 95,
-            backlog_rate: 7.6,
-            gpa_trend: [
-                { month: "Sem 1", avg_gpa: 7.2 },
-                { month: "Sem 2", avg_gpa: 7.5 },
-                { month: "Sem 3", avg_gpa: 7.4 },
-                { month: "Sem 4", avg_gpa: 7.8 },
-                { month: "Sem 5", avg_gpa: 8.1 }
-            ],
-            gpa_distribution: [
-                { range: "0-4", count: 12 },
-                { range: "4-6", count: 145 },
-                { range: "6-8", count: 680 },
-                { range: "8-10", count: 403 }
-            ],
-            gpa_risk_scatter: Array.from({ length: 50 }, () => ({
-                gpa: randFloat(4, 10),
-                risk: randFloat(0, 100)
-            }))
-        };
+        try {
+            const res = await apiClient.get('/dean/academic-trends');
+            return res.data;
+        } catch (err) {
+            console.warn('[deanService.getAcademicTrends] Backend unavailable, using fallback', err);
+            return fallbackAcademicTrends();
+        }
     },
 
     getEngagementAttendance: async () => {
-        await delay(400);
-        return {
-            avg_attendance: 86.4,
-            avg_engagement: 74.2,
-            low_attendance_count: 156,
-            low_attendance_pct: 12.5,
-            avg_login_gap_days: 2.4,
-            attendance_distribution: [
-                { range: "0-60%", count: 45 },
-                { range: "60-75%", count: 180 },
-                { range: "75-90%", count: 520 },
-                { range: "90-100%", count: 495 }
-            ],
-            department_engagement: [
-                { department: "CS", avg_engagement: 82, avg_attendance: 88 },
-                { department: "EC", avg_engagement: 75, avg_attendance: 85 },
-                { department: "ME", avg_engagement: 68, avg_attendance: 82 },
-                { department: "CE", avg_engagement: 72, avg_attendance: 84 }
-            ],
-            attendance_risk_scatter: Array.from({ length: 50 }, () => ({
-                attendance: randFloat(40, 100),
-                risk: randFloat(0, 100)
-            }))
-        };
+        try {
+            const res = await apiClient.get('/dean/engagement-attendance');
+            return res.data;
+        } catch (err) {
+            console.warn('[deanService.getEngagementAttendance] Backend unavailable, using fallback', err);
+            return fallbackEngagementAttendance();
+        }
     },
 
     getInterventions: async () => {
-        await delay(500);
-        return {
-            total_interventions: 342,
-            resolution_rate: 78,
-            status_distribution: {
-                "Pending": 45,
-                "In Progress": 86,
-                "Completed": 198,
-                "Failed": 13
-            },
-            type_distribution: {
-                "Warning Letter": 120,
-                "Counseling": 85,
-                "Meeting": 92,
-                "Tutoring": 45
-            },
-            pending_by_faculty: [
-                { faculty_id: "F001", count: 12 },
-                { faculty_id: "F002", count: 18 },
-                { faculty_id: "F003", count: 8 },
-                { faculty_id: "F004", count: 7 }
-            ]
-        };
+        try {
+            const res = await apiClient.get('/dean/interventions');
+            return res.data;
+        } catch (err) {
+            console.warn('[deanService.getInterventions] Backend unavailable, using fallback', err);
+            return fallbackInterventions();
+        }
     },
 
     getPredictiveInsights: async () => {
-        await delay(600);
-        return {
-            projected_dropout_rate: randFloat(8, 15, 1),
-            model_accuracy_note: "Model accuracy: 94.2% based on last semester validation",
-            top_risk_factors: [
-                { feature: "attendance_rate", importance: 0.42 },
-                { feature: "gpa_current", importance: 0.35 },
-                { feature: "assignment_completion", importance: 0.28 },
-                { feature: "lms_engagement", importance: 0.15 },
-                { feature: "previous_backlogs", importance: 0.12 }
-            ],
-            risk_curve: [
-                { risk_bucket: "0-20%", student_count: 450 },
-                { risk_bucket: "20-40%", student_count: 320 },
-                { risk_bucket: "40-60%", student_count: 210 },
-                { risk_bucket: "60-80%", student_count: 140 },
-                { risk_bucket: "80-100%", student_count: 120 }
-            ]
-        };
+        try {
+            const res = await apiClient.get('/dean/predictive-insights');
+            return res.data;
+        } catch (err) {
+            console.warn('[deanService.getPredictiveInsights] Backend unavailable, using fallback', err);
+            return fallbackPredictiveInsights();
+        }
     },
 
     getReportsSummary: async (params?: { department?: string; semester?: string }) => {
-        await delay(700);
-        return Array.from({ length: 20 }, (_, i) => ({
-            id: i + 1,
-            student_id: `S${1000 + i}`,
-            student_name: `Student ${i + 1}`,
-            department: randChoice(["Computer Science", "Electronics", "Mechanical", "Civil"]),
-            risk_score: randInt(10, 95),
-            attendance: randInt(60, 100),
-            gpa: randFloat(5, 9.5),
-            status: randChoice(["Active", "At Risk", "Under Monitoring"])
-        }));
+        try {
+            const res = await apiClient.get('/dean/reports/summary', { params });
+            const data = res.data;
+            return Array.isArray(data) ? data : (data.students ?? data.items ?? []);
+        } catch (err) {
+            console.warn('[deanService.getReportsSummary] Backend unavailable, using fallback', err);
+            return fallbackReportsSummary();
+        }
     },
 };

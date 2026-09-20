@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: edurisk-backend
+    runtime: python
+    plan: free
+    region: singapore
+
+    buildCommand: |
+      pip install -r requirements.txt
+
+    startCommand: |
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./student_risk.db
+      - key: CORS_ORIGINS
+        value: '["https://your-app.vercel.app","http://localhost:3000"]'
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: LOG_LEVEL
+        value: INFO
+
+    # Persist the SQLite DB and ML model across deploys
+    disk:
+      name: edurisk-data
+      mountPath: /opt/render/project/src/backend
+      sizeGB: 1
