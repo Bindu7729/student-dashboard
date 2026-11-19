@@ -141,7 +141,7 @@ class SHAPExplainer:
         
         # Custom formatting for specific features
         replacements = {
-            'API': 'API',
+            'Api': 'API',
             'Gpa': 'GPA',
             'Lms': 'LMS'
         }
@@ -288,3 +288,4 @@ class ExplainabilityService:
                 for factor in shap_factors
             ]
         }
+
